@@ -49,7 +49,7 @@
             transform: scale(1.2);
         }
 
-        /* 仿纸张纹理 */
+        /* 仿纸张纹理 (CSS层叠增强视觉) */
         .paper-overlay {
             position: fixed;
             top: 0;
@@ -97,7 +97,7 @@
                     </button>
                 </div>
 
-                <!-- 参数控制组 (4大参数独立控制，排版极简美观) -->
+                <!-- 参数控制组 -->
                 <div class="flex-1 grid grid-cols-2 gap-x-8 gap-y-3">
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] uppercase tracking-widest text-neutral-500 font-medium flex justify-between">
@@ -121,17 +121,26 @@
                         <label class="text-[10px] uppercase tracking-widest text-neutral-500 font-medium flex justify-between">
                             推进速度 <span id="scrollSpeedLabel">1.5</span>
                         </label>
-                        <input type="range" id="scrollSpeedSlider" min="0.5" max="5.0" step="0.1" value="1.5" class="slider-custom w-full">
+                        <input type="range" id="scrollSpeedSlider" min="-5.0" max="5.0" step="0.1" value="1.5" class="slider-custom w-full">
                     </div>
                 </div>
 
-                <!-- 重新开始 & 导出 -->
-                <div class="flex items-center gap-2">
-                    <button id="clearBtn" class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-black transition-colors" title="重置画布">
-                        <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                <!-- 重新开始 & 导出媒体 -->
+                <div class="flex items-center gap-1.5">
+                    <button id="clearBtn" class="w-9 h-9 flex items-center justify-center text-neutral-400 hover:text-black transition-colors" title="重置画布与录音">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                     </button>
-                    <button id="saveBtn" class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-black transition-colors" title="保存画作">
-                        <i data-lucide="download" class="w-5 h-5"></i>
+                    <!-- 音频保存按钮 -->
+                    <button id="saveAudioBtn" class="w-9 h-9 flex items-center justify-center text-neutral-300 hover:text-emerald-600 transition-colors" title="需先停止创作，即可保存本次原声">
+                        <i data-lucide="music" class="w-4 h-4"></i>
+                    </button>
+                    <!-- 新增：视频保存按钮 -->
+                    <button id="saveVideoBtn" class="w-9 h-9 flex items-center justify-center text-neutral-300 hover:text-emerald-600 transition-colors" title="需先停止创作，即可保存本次创作视频">
+                        <i data-lucide="video" class="w-4 h-4"></i>
+                    </button>
+                    <!-- 画作保存按钮 -->
+                    <button id="saveBtn" class="w-9 h-9 flex items-center justify-center text-neutral-400 hover:text-black transition-colors" title="保存最终艺术画作">
+                        <i data-lucide="download" class="w-4 h-4"></i>
                     </button>
                 </div>
             </div>
@@ -147,15 +156,15 @@
         </div>
     </footer>
 
-    <!-- 自定义异常提示弹窗 -->
-    <div id="errorModal" class="fixed inset-0 bg-neutral-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-300">
-        <div class="bg-white max-w-md w-full rounded-3xl p-8 shadow-2xl border border-neutral-100 transform translate-y-4 transition-all duration-300" id="errorBox">
-            <div class="flex items-center gap-3 text-amber-600 mb-4">
-                <i data-lucide="alert-circle" class="w-6 h-6"></i>
-                <h3 class="text-lg font-medium text-neutral-900">音频唤醒遇阻</h3>
+    <!-- 自定义信息弹窗 -->
+    <div id="infoModal" class="fixed inset-0 bg-neutral-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-300">
+        <div class="bg-white max-w-md w-full rounded-3xl p-8 shadow-2xl border border-neutral-100 transform translate-y-4 transition-all duration-300" id="infoBox">
+            <div class="flex items-center gap-3 text-neutral-900 mb-4">
+                <i data-lucide="info" class="w-6 h-6" id="modalIcon"></i>
+                <h3 class="text-lg font-medium" id="modalTitle">提示</h3>
             </div>
-            <p id="errorText" class="text-sm text-neutral-500 leading-relaxed mb-6">
-                无法捕获您的声音。这通常是因为浏览器禁用了麦克风权限。
+            <p id="infoText" class="text-sm text-neutral-500 leading-relaxed mb-6">
+                这里是提示信息的内容。
             </p>
             <button id="closeModalBtn" class="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-800 transition-colors">
                 我知道了
@@ -179,21 +188,21 @@
         let audioCtx, analyser, dataArray, source, stream;
         let isActive = false;
 
+        // --- 多媒体录音/录像引擎变量 ---
+        let audioRecorder, videoRecorder;
+        let audioChunks = [], videoChunks = [];
+        let audioBlob = null, videoBlob = null;
+        let audioUrl = null, videoUrl = null;
+
         // --- 艺术家物理状态变量 ---
         let points = [];          
         let penX, penY;          
         let vx = 0, vy = 0;      
         let angle = 0;            
         
-        // 双速度完全分离控制
-        let paintSpeed = 0.6;     // 物理绘画滑行速度 (在纸上移动的速度，可调节至极慢)
-        let scrollSpeed = 1.5;    // 画布向左自动平移推进的速度
-        
-        // 2D 镜头缓动追踪变量 (支持垂直无限延伸)
+        let paintSpeed = 0.6;     
+        let scrollSpeed = 1.5;    
         let cameraX = 0;          
-        let targetCameraX = 0;    
-        let cameraY = 0;          
-        let targetCameraY = 0;    
         
         // --- 灵感心流与音乐解析 ---
         let flowEnergy = 0;       
@@ -230,9 +239,6 @@
             vy = 0;
             angle = 0;
             cameraX = 0;
-            targetCameraX = 0;
-            cameraY = 0;
-            targetCameraY = 0;
             points = [];
             flowEnergy = 0;
             artistState = 'idle';
@@ -242,20 +248,34 @@
         window.addEventListener('resize', initCanvas);
         initCanvas();
 
-        // 弹窗提示
-        function showError(msg) {
-            const modal = document.getElementById('errorModal');
-            const box = document.getElementById('errorBox');
-            if (msg) document.getElementById('errorText').textContent = msg;
+        function showModal(title, msg, isError = false) {
+            const modal = document.getElementById('infoModal');
+            const box = document.getElementById('infoBox');
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('infoText').textContent = msg;
+            
+            const icon = document.getElementById('modalIcon');
+            if (isError) {
+                icon.setAttribute('data-lucide', 'alert-circle');
+                icon.classList.replace('text-neutral-900', 'text-amber-600');
+            } else {
+                icon.setAttribute('data-lucide', 'info');
+                icon.classList.replace('text-amber-600', 'text-neutral-900');
+            }
+            safeCreateIcons();
+
             modal.classList.remove('opacity-0', 'pointer-events-none');
             box.classList.remove('translate-y-4');
         }
+
         document.getElementById('closeModalBtn').addEventListener('click', () => {
-            document.getElementById('errorModal').classList.add('opacity-0', 'pointer-events-none');
-            document.getElementById('errorBox').classList.add('translate-y-4');
+            document.getElementById('infoModal').classList.add('opacity-0', 'pointer-events-none');
+            document.getElementById('infoBox').classList.add('translate-y-4');
         });
 
-        // 麦克风/音频流激活
+        // ==========================================
+        // 核心多媒体录制引擎：同时捕获音频与画布视频
+        // ==========================================
         async function setupAudio() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -270,22 +290,76 @@
                 
                 isActive = true;
 
+                audioChunks = [];
+                videoChunks = [];
+
+                // 1. 初始化纯音频录制 (用于保存MP3/WEBM音频)
+                try {
+                    audioRecorder = new MediaRecorder(stream);
+                    audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    audioRecorder.onstop = () => {
+                        const mimeType = audioRecorder.mimeType || 'audio/webm';
+                        audioBlob = new Blob(audioChunks, { type: mimeType });
+                        audioUrl = URL.createObjectURL(audioBlob);
+                        const btn = document.getElementById('saveAudioBtn');
+                        btn.classList.replace('text-neutral-300', 'text-emerald-500');
+                        btn.title = "点击下载本次创作的原声音乐";
+                    };
+                    audioRecorder.start();
+                } catch(e) { console.warn("音频录制初始化失败"); }
+
+                // 2. 初始化带声音的高清视频录制 (Canvas Stream + Audio Stream)
+                try {
+                    // 获取画布每秒 30 帧的高清视频流
+                    const canvasStream = canvas.captureStream(30); 
+                    
+                    // 将麦克风的音频轨混流加入到视频流中
+                    const combinedStream = new MediaStream([
+                        ...canvasStream.getTracks(),
+                        ...stream.getAudioTracks()
+                    ]);
+
+                    // 优先选择兼容性更好、质量更高的视频编码格式
+                    const videoOptions = { mimeType: 'video/webm;codecs=vp9' };
+                    if (!MediaRecorder.isTypeSupported(videoOptions.mimeType)) {
+                        videoOptions.mimeType = 'video/webm'; // Fallback
+                    }
+
+                    videoRecorder = new MediaRecorder(combinedStream, videoOptions);
+                    videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
+                    videoRecorder.onstop = () => {
+                        const mimeType = videoRecorder.mimeType || 'video/webm';
+                        videoBlob = new Blob(videoChunks, { type: mimeType });
+                        videoUrl = URL.createObjectURL(videoBlob);
+                        const btn = document.getElementById('saveVideoBtn');
+                        btn.classList.replace('text-neutral-300', 'text-emerald-500');
+                        btn.title = "点击下载本次创作的高清视频(带原声)";
+                    };
+                    videoRecorder.start();
+                } catch(e) { console.warn("视频录制初始化失败 (部分浏览器可能不支持):", e); }
+
+                // 重置下载按钮的UI状态
+                document.getElementById('saveAudioBtn').classList.replace('text-emerald-500', 'text-neutral-300');
+                document.getElementById('saveVideoBtn').classList.replace('text-emerald-500', 'text-neutral-300');
+                if(audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+                if(videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+
                 document.getElementById('pulseBg').classList.remove('mic-pulse');
                 document.getElementById('pulseBg').classList.add('hidden');
-                
-                // 将按钮更新为红色停止(Square)图标，伴随温和呼吸动效
                 document.getElementById('startBtn').innerHTML = `<i data-lucide="square" id="micIcon" class="w-6 h-6 text-red-500 animate-pulse"></i>`;
                 safeCreateIcons();
 
                 animate();
             } catch (err) {
-                console.error("音频启动异常:", err);
-                showError("请确保浏览器已允许本网页访问您的麦克风。");
+                showModal("音频唤醒遇阻", "请确保浏览器已允许本网页访问您的麦克风。", true);
             }
         }
 
-        // 停止音频流采集
+        // 停止音频流与录像采集
         function stopAudio() {
+            if (audioRecorder && audioRecorder.state !== 'inactive') audioRecorder.stop();
+            if (videoRecorder && videoRecorder.state !== 'inactive') videoRecorder.stop();
+
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
@@ -296,7 +370,6 @@
             }
             isActive = false;
 
-            // 还原 UI 主动按钮及呼吸外圈
             document.getElementById('pulseBg').classList.remove('hidden');
             document.getElementById('pulseBg').classList.add('mic-pulse');
             document.getElementById('startBtn').innerHTML = `<i data-lucide="mic" id="micIcon" class="w-6 h-6 text-white transition-all"></i>`;
@@ -316,16 +389,15 @@
                 stateEl.innerText = "静听思绪中...";
                 stateEl.className = "text-[10px] text-neutral-400 tracking-wider";
             } else if (beatInertia > 2.0) {
-                stateEl.innerText = "激烈重音！顿挫飞溅";
+                stateEl.innerText = "激昂之境！顿挫飞溅";
                 stateEl.className = "text-[10px] text-red-500 font-medium tracking-wider";
             } else if (artistState === 'scribble') {
-                stateEl.innerText = "高频感知：密集手绘涂鸦";
+                stateEl.innerText = "灵动之境：密集团绕涂鸦";
                 stateEl.className = "text-[10px] text-neutral-800 font-medium tracking-wider";
             } else {
-                stateEl.innerText = "低频共振：舒展蔓延";
+                stateEl.innerText = "深沉之境：舒展蔓延游走";
                 stateEl.className = "text-[10px] text-neutral-700 tracking-wider";
             }
-            
             document.getElementById('flowEnergyLabel').innerText = `能量: ${Math.round(flowEnergy * 100)}%`;
             document.getElementById('intensityBar').style.width = `${flowEnergy * 100}%`;
         }
@@ -351,7 +423,6 @@
             let bassAvg = bassCount > 0 ? bassSum / bassCount : 0;
             let trebleAvg = trebleCount > 0 ? trebleSum / trebleCount : 0;
 
-            // 瞬态节奏爆发检测
             let volumeDelta = average - prevAverage;
             if (volumeDelta > 15 && average > strokeConfig.threshold) {
                 beatInertia = Math.min(beatInertia + (volumeDelta / 10), 8.0);
@@ -382,81 +453,68 @@
                 let bassFactor = smoothedBass / 255;
                 let trebleFactor = smoothedTreble / 255;
 
-                // 1. 独立计算画笔移动速度 (受瞬时节拍推动)
                 let currentSpeed = paintSpeed * (1 + beatInertia * 0.3);
-
-                // 2. 空间曲率解绑算法 (Decoupled Spatial Curvature)
-                // 先计算出“单位距离”内的角变化率 (turnRatePerPixel)，使线条几何弧度完全独立于绘画移动速度！
                 let turnRatePerPixel = 0;
-
-                // 低频振幅控制大范围转向趋势
                 let macroTurn = Math.sin(globalTime * 0.15) * (0.02 + bassFactor * 0.08);
 
                 if (artistState === 'scribble') {
                     let styleCycle = Math.sin(globalTime * 0.25); 
                     if (styleCycle > 0.4) {
-                        // 局部无序涂鸦 (高频控制)
                         turnRatePerPixel = (0.35 + trebleFactor * 0.6) * Math.sign(Math.sin(globalTime * 1.1));
                     } else if (styleCycle < -0.4) {
-                        // 经典大回环：即便速度慢，转角率也保持极低，拉出极大极流畅的圆圈
                         turnRatePerPixel = (0.015 + bassFactor * 0.04) * Math.sign(Math.sin(globalTime * 0.6));
                     } else {
-                        // 随机手绘纠缠
                         turnRatePerPixel = (trebleFactor * 0.35) + Math.sin(globalTime * 3) * 0.12;
                     }
                 } else {
-                    // 藤蔓式自然漫步：大而松弛的舒展弧线
                     turnRatePerPixel = macroTurn + Math.sin(globalTime * 0.3) * (0.03 + bassFactor * 0.05); 
                 }
 
-                // 【核心解绑公式】：每帧旋转角变化 = 空间弯曲率 * 本帧行进位移！
                 angle += turnRatePerPixel * (currentSpeed * 0.85);
 
-                // 基础横向推力，温和引导大方向向右
-                let baseForwardForce = paintSpeed * 0.15; 
-                let targetVx = Math.cos(angle) * currentSpeed + baseForwardForce;
+                let targetVx = Math.cos(angle) * currentSpeed;
                 let targetVy = Math.sin(angle) * currentSpeed;
 
-                // 引入高频手绘颤抖
-                let jitterAmount = 0.04 + trebleFactor * 1.0;
+                let jitterAmount = 0.03 + trebleFactor * 0.8;
                 let handJitterX = Math.sin(globalTime * 17) * jitterAmount;
                 let handJitterY = Math.cos(globalTime * 13) * jitterAmount;
 
-                // 物理缓冲平滑过渡
                 let smoothing = Math.max(0.05, 0.15 - (beatInertia * 0.02)); 
                 vx += (targetVx - vx) * smoothing + handJitterX;
                 vy += (targetVy - vy) * smoothing + handJitterY;
 
-                // 核心引力：为了防止画笔在无人监管下朝着极远处脱轨流失，
-                // 我们在超大范围内提供一个极轻微的、温和的 Y 轴引力拉力（类似羽毛般的悬挂），
-                // 彻底替代原本生硬撞墙折返的 straight line 效果。
-                const dpr = window.devicePixelRatio || 1;
-                const logicalHeight = canvas.height / dpr;
-                const centerY = logicalHeight / 2;
-                let gentleGravity = (centerY - penY) * 0.0008; // 极其微弱，提供无限自由的回旋空间
-                vy += gentleGravity;
-
-                penX += vx;
+                cameraX += scrollSpeed;
+                penX += scrollSpeed + vx;
                 penY += vy;
 
-                // 向左倒退的弱限制，确保基础向右推移
-                if (penX < cameraX + 50) {
-                    vx += 1.0; angle += (0 - angle) * 0.02;
+                const dpr = window.devicePixelRatio || 1;
+                const logicalWidth = canvas.width / dpr;
+                const logicalHeight = canvas.height / dpr;
+
+                let relativeX = penX - cameraX;
+                if (relativeX < logicalWidth * 0.08) {
+                    penX = cameraX + logicalWidth * 0.08;
+                    vx = Math.abs(vx) * 0.8; 
+                } else if (relativeX > logicalWidth * 0.92) {
+                    penX = cameraX + logicalWidth * 0.92;
+                    vx = -Math.abs(vx) * 0.8;
                 }
 
-                // 笔压力 (线宽随重低音与爆发饱满度起伏)
+                const verticalMargin = 100;
+                if (penY < verticalMargin) {
+                    let forceRatio = (verticalMargin - penY) / verticalMargin;
+                    vy += forceRatio * 0.6;
+                    let angleToCenter = Math.atan2(logicalHeight / 2 - penY, vx || 0.1);
+                    angle += (angleToCenter - angle) * 0.06 * forceRatio;
+                } else if (penY > logicalHeight - verticalMargin) {
+                    let forceRatio = (penY - (logicalHeight - verticalMargin)) / verticalMargin;
+                    vy -= forceRatio * 0.6;
+                    let angleToCenter = Math.atan2(logicalHeight / 2 - penY, vx || 0.1);
+                    angle += (angleToCenter - angle) * 0.06 * forceRatio;
+                }
+
                 let dynamicWeight = strokeConfig.weight * (1 + bassFactor * 1.5 + beatInertia * 0.5);
                 points.push({ x: penX, y: penY, w: dynamicWeight });
-
-                // --- 2D 相机多轴锁定追踪机制 ---
-                const logicalWidth = canvas.width / dpr;
-                // 水平追踪焦点
-                const viewFocusX = logicalWidth * 0.45;
-                if (penX - cameraX > viewFocusX) {
-                    targetCameraX = penX - viewFocusX;
-                }
-                // 垂直平滑解绑追踪：相机完美跟随画笔，始终将当前落笔处柔和对齐至屏幕垂直中心
-                targetCameraY = penY - logicalHeight / 2;
 
             } else {
                 if (artistState !== 'idle') {
@@ -467,28 +525,31 @@
                 vy *= 0.9;
             }
 
-            // 平滑相机滚动：基于完全独立的【推进速度 (scrollSpeed)】变量
-            let cameraEasing = Math.min(0.2, scrollSpeed * 0.03); 
-            cameraX += (targetCameraX - cameraX) * cameraEasing;
-            cameraY += (targetCameraY - cameraY) * cameraEasing; // 垂直视口平滑推移
-
             updateStateUI();
             draw();
             requestAnimationFrame(animate);
         }
 
-        // --- 动态写意笔压渲染器 (支持双轴相机转换) ---
+        // --- 画布物理渲染 ---
         function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 【为了视频能够录制到背景，直接将纸张颜色和网格绘制到 Canvas】
+            ctx.fillStyle = '#faf9f6';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const dpr = window.devicePixelRatio || 1;
+            
+            ctx.fillStyle = '#e5e5e3';
+            for (let x = 0; x < canvas.width; x += 30 * dpr) {
+                for (let y = 0; y < canvas.height; y += 30 * dpr) {
+                    ctx.fillRect(x, y, 1 * dpr, 1 * dpr);
+                }
+            }
 
             if (points.length < 2) return;
 
-            const dpr = window.devicePixelRatio || 1;
-
             ctx.save();
             ctx.scale(dpr, dpr);
-            // 应用 2D 镜头矩阵偏移平移
-            ctx.translate(-cameraX, -cameraY);
+            ctx.translate(-cameraX, 0);
 
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -530,7 +591,6 @@
                 }
             }
 
-            // 标志性的朱砂红笔尖触点
             if (artistState !== 'idle' && points[points.length - 1]) {
                 ctx.beginPath();
                 let tipRadius = (points[points.length - 1].w * 0.6) + 1.5;
@@ -542,7 +602,7 @@
             ctx.restore();
         }
 
-        // --- 面板收缩管理 ---
+        // --- UI面板管理 ---
         let isPanelCollapsed = false;
         const uiFooter = document.getElementById('uiFooter');
         const toggleIcon = document.getElementById('toggleIcon');
@@ -558,13 +618,9 @@
             }
         });
 
-        // --- 交互及参数绑定 ---
         document.getElementById('startBtn').addEventListener('click', () => {
-            if (!isActive) {
-                setupAudio();
-            } else {
-                stopAudio();
-            }
+            if (!isActive) setupAudio();
+            else stopAudio();
         });
 
         document.getElementById('weightSlider').addEventListener('input', (e) => {
@@ -589,8 +645,47 @@
 
         document.getElementById('clearBtn').addEventListener('click', () => {
             resetArtist();
+            // 清理录音/视频缓冲
+            if(audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+            if(videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+            document.getElementById('saveAudioBtn').classList.replace('text-emerald-500', 'text-neutral-300');
+            document.getElementById('saveVideoBtn').classList.replace('text-emerald-500', 'text-neutral-300');
         });
 
+        // --- 保存媒体交互 ---
+        document.getElementById('saveAudioBtn').addEventListener('click', () => {
+            if (isActive) {
+                showModal("操作提示", "录制正在进行中！\n请先点击中间的红色方块按钮「停止创作」，随后系统会为您打包生成音频文件进行保存。");
+                return;
+            }
+            if (!audioUrl) {
+                showModal("未检测到录音", "暂无可用录音。\n请点击中央的麦克风按钮开启声音采集，进行一段创作后再保存。");
+                return;
+            }
+            const ext = (audioRecorder && audioRecorder.mimeType.includes('mp4')) ? 'mp4' : 'webm';
+            const link = document.createElement('a');
+            link.download = `声影原声-${Date.now()}.${ext}`;
+            link.href = audioUrl;
+            link.click();
+        });
+
+        document.getElementById('saveVideoBtn').addEventListener('click', () => {
+            if (isActive) {
+                showModal("操作提示", "视频录制正在进行中！\n请先点击中间的红色方块按钮「停止创作」，随后系统会为您处理并生成高清视频。");
+                return;
+            }
+            if (!videoUrl) {
+                showModal("未检测到视频", "暂无可用视频。\n请点击中央的麦克风按钮进行一段创作后再点击保存。注意：部分老旧浏览器可能不支持视频采集功能。");
+                return;
+            }
+            const ext = (videoRecorder && videoRecorder.mimeType.includes('mp4')) ? 'mp4' : 'webm';
+            const link = document.createElement('a');
+            link.download = `声影艺术录像-${Date.now()}.${ext}`;
+            link.href = videoUrl;
+            link.click();
+        });
+
+        // --- 保存画作 ---
         document.getElementById('saveBtn').addEventListener('click', () => {
             const dpr = window.devicePixelRatio || 1;
             const tempCanvas = document.createElement('canvas');
@@ -599,21 +694,32 @@
             tempCanvas.height = canvas.height;
             const tCtx = tempCanvas.getContext('2d');
             
-            tCtx.fillStyle = '#faf9f6';
-            tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-            
-            tCtx.fillStyle = '#e5e5e5';
-            for (let x = 0; x < tempCanvas.width; x += 30 * dpr) {
-                for (let y = 0; y < tempCanvas.height; y += 30 * dpr) {
-                    tCtx.fillRect(x, y, 1 * dpr, 1 * dpr);
-                }
-            }
-
+            // 复制现有主画布内容（已包含底色和网格）
             tCtx.drawImage(canvas, 0, 0);
-            
+
+            const logicalWidth = canvas.width / dpr;
+            const logicalHeight = canvas.height / dpr;
+
+            tCtx.save();
+            tCtx.scale(dpr, dpr);
+
+            tCtx.font = '300 10px "Noto Sans SC", sans-serif';
+            tCtx.fillStyle = 'rgba(15, 15, 15, 0.4)';
+            tCtx.letterSpacing = '1px';
+            tCtx.fillText('GESTURAL AUDIO DOODLE', 40, logicalHeight - 45);
+            tCtx.fillText('声影流形 · 意念留白', 40, logicalHeight - 30);
+
+            tCtx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+            tCtx.lineWidth = 1.5;
+            tCtx.strokeRect(logicalWidth - 65, logicalHeight - 50, 22, 22);
+            tCtx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+            tCtx.font = '900 11px sans-serif';
+            tCtx.fillText('声', logicalWidth - 60, logicalHeight - 35);
+            tCtx.restore();
+
             const link = document.createElement('a');
-            link.download = `意念声影-${Date.now()}.png`;
-            link.href = tempCanvas.toDataURL();
+            link.download = `声影流形画作-${Date.now()}.png`;
+            link.href = tempCanvas.toDataURL('image/png');
             link.click();
         });
 
